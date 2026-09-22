@@ -1,0 +1,531 @@
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSelector, useDispatch } from "react-redux";
+import { setPropertyDetails } from "../store/slices/propertyDetails";
+import config from "../utils/config";
+import Image from "next/image";
+import whatsappIcon from "../../app/assets/Images/whatsapp (3).png";
+import { MdOutlineVerified } from "react-icons/md";
+import { MapPin } from "lucide-react";
+import { toast } from "react-toastify";
+import Login from "../auth/Login";
+import PropertyAdsColors from "../utils/dynamic-colors/PropertyAdsColors.json";
+import PropertyAds from "./PropertyAds";
+import axios from "axios";
+import useWhatsappHook from "../utils/useWhatsappHook";
+import CryptoJS from "crypto-js";
+import theme from "../utils/theme.json";
+const Badge = ({ children }) => (
+  <span
+    style={{
+      backgroundColor: PropertyAdsColors.badge.background,
+      color: PropertyAdsColors.badge.text,
+      borderColor: PropertyAdsColors.badge.border,
+    }}
+    className="inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1 ring-inset"
+  >
+    {children}
+  </span>
+);
+const Stat = ({ label, value }) => (
+  <div className="rounded-xl shadow-xl border border-gray-100 bg-white hover:-translate-y-1 p-4">
+    <div
+      style={{ color: PropertyAdsColors.primary.text }}
+      className="text-xs font-medium"
+    >
+      {label}
+    </div>
+    <div
+      style={{ color: PropertyAdsColors.primary.value }}
+      className="mt-1 text-lg font-semibold "
+    >
+      {value}
+    </div>
+  </div>
+);
+const Empty = ({ message = "No data found." }) => (
+  <div className="hidden lg:flex items-center justify-center p-8 text-sm text-gray-500">
+    {message}
+  </div>
+);
+const JWT_SECRET = process.env.NEXT_PUBLIC_ENCRYPTION_SECRET;
+const ENCRYPTION_KEY = CryptoJS.SHA256(JWT_SECRET).toString();
+function decrypt(encryptedText) {
+  const [ivHex, encryptedHex] = encryptedText.split(":");
+  const iv = CryptoJS.enc.Hex.parse(ivHex);
+  const encrypted = CryptoJS.enc.Hex.parse(encryptedHex);
+  const decrypted = CryptoJS.AES.decrypt(
+    { ciphertext: encrypted },
+    CryptoJS.enc.Hex.parse(ENCRYPTION_KEY),
+    { iv }
+  );
+  return decrypted.toString(CryptoJS.enc.Utf8);
+}
+const PropertyDeatils = ({ propertyDataDetails, contacted }) => {
+  const modalRef = useRef(null);
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const searchData = useSelector((state) => state.search);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [submittedStates, setSubmittedStates] = useState([]);
+  const [property, setProperty] = useState();
+  useEffect(() => {
+    setProperty(propertyDataDetails);
+  }, [propertyDataDetails]);
+  const [error, setError] = useState(null);
+  const getPropertyDetails = async (propertyData) => {
+    try {
+      const response = await fetch(
+        `${config.awsApiUrl}/listings/v1/gspmeet?unique_property_id=${propertyData.unique_property_id}`
+      );
+      const data = await response.json();
+      const propertydata = data?.property;
+      const decryptedJson = decrypt(propertydata);
+      const parsed = decryptedJson ? JSON.parse(decryptedJson) : null;
+      const sellerdata = parsed.user;
+      if (response?.ok) {
+        return sellerdata;
+      } else {
+        throw new Error("Failed to fetch owner details");
+      }
+    } catch (err) {
+      console.error("err: ", err);
+    }
+  };
+  const handleClose = () => {
+    setShowLoginModal(false);
+  };
+  const formatValue = (value) =>
+    value % 1 === 0
+      ? parseInt(value)
+      : parseFloat(value).toFixed(2).replace(/\.00$/, "");
+  const formatToIndianCurrency = (value) => {
+    if (!value || isNaN(value)) return "N/A";
+    const numValue = parseFloat(value);
+    if (numValue >= 10000000) return (numValue / 10000000).toFixed(2) + " Cr";
+    if (numValue >= 100000) return (numValue / 100000).toFixed(2) + " L";
+    if (numValue >= 1000) return (numValue / 1000).toFixed(2) + " K";
+    return numValue.toString();
+  };
+  const { handleAPI } = useWhatsappHook();
+  const handleChatClick = async (e) => {
+    e.stopPropagation();
+    const data = localStorage.getItem("user");
+    const userData = data ? JSON.parse(data) : null;
+    if (!data) {
+      toast?.info?.("Please Login to Schedule Visits!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+      setShowLoginModal?.(true);
+      return;
+    }
+    try {
+      const sellerData = await getPropertyDetails?.(property);
+      const phone = sellerData?.mobile || sellerData?.phone;
+      const name = sellerData?.name || "";
+      await axios.post(`${config.awsApiUrl}/enquiry/v1/contactSeller`, {
+        unique_property_id: property.unique_property_id,
+        user_id: userData.user_id,
+        fullname: userData.name,
+        mobile: userData.mobile,
+        email: userData.email,
+      });
+      if (phone) {
+        const propertyFor = property.property_for === "Rent" ? "rent" : "sale";
+        const propertyId = property.unique_property_id;
+        const bhkPart = property.bedrooms ? `${property.bedrooms}-bhk-` : "";
+        const subTypePart = property.sub_type
+          ? `${property.sub_type.toLowerCase().replace(/\s+/g, "-")}-`
+          : "";
+        const propertyNameSlug = property.property_name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        const builderNameSlug = property.builder_name
+          ? `-by-${property.builder_name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "")}`
+          : "";
+        const locationSlug = property.location_id
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        const citySlug = property.city
+          ? property.city
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "")
+          : "hyderabad";
+        const forPart = `for-${propertyFor}-`;
+        const seoSlug = `${bhkPart}${subTypePart}${propertyNameSlug}${builderNameSlug}-${forPart}in-${locationSlug}-${citySlug}`;
+        const fullUrl = `${window.location.origin}/property/${seoSlug}/${propertyId}`;
+        const encodedMessage = encodeURIComponent(
+          `Hi ${name},\nI'm interested in this property: ${property.property_name}.\n${fullUrl}\nPlease reach me at ${userData.mobile}.`
+        );
+        window.open(
+          `https://wa.me/+91${phone}?text=${encodedMessage}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      } else {
+        toast?.error?.("Owner's phone number is not available.", {
+          position: "top-right",
+          autoClose: 3000,
+        });
+      }
+    } catch (error) {
+      toast?.error?.("Failed to get owner's contact details.", {
+        position: "top-right",
+        autoClose: 3000,
+      });
+    }
+  };
+  const handleContactSeller = async () => {
+    try {
+      const data = localStorage.getItem("user");
+      if (!data) {
+        toast?.info?.("Please Login to Contact!");
+        setShowLoginModal?.(true);
+        return;
+      }
+      const userDetails = JSON.parse(data);
+      const payload = {
+        unique_property_id: property.unique_property_id,
+        user_id: userDetails.user_id || "N/A",
+        fullname: userDetails.name || "N/A",
+        mobile: property?.user?.mobile,
+        email: userDetails.email || "N/A",
+      };
+      const SubType =
+        property.sub_type === "Apartment"
+          ? `${property?.sub_type} ${property?.bedrooms}BHK`
+          : property?.sub_type;
+      const smspayload = {
+        name: userDetails?.name || "N/A",
+        mobile: userDetails.mobile,
+        sub_type: SubType || "N/A",
+        location: property?.location_id?.split(/[\s,]+/)[0] || "N/A",
+        property_cost: formatToIndianCurrency(property?.property_cost),
+        ownerMobile: property?.user?.mobile || "N/A",
+      };
+      await axios?.post?.(
+        `${config.awsApiUrl}/enquiry/v1/sendLeadTextMessage`,
+        smspayload
+      );
+      await axios?.post?.(
+        `${config.awsApiUrl}/enquiry/v1/contactSeller`,
+        payload
+      );
+      await handleAPI(property);
+      setSubmittedStates((prev) => ({
+        ...prev,
+        [property.unique_property_id]: {
+          ...prev[property?.unique_property_id],
+          contact: true,
+        },
+      }));
+      router.refresh();
+      toast?.success?.("Enquiry submitted!");
+    } catch (err) {
+      toast?.error?.("Something went wrong. Please try again.");
+    }
+  };
+  const handleProperty = useCallback(
+    (propertyItem) => {
+      setProperty(propertyItem);
+      dispatch(setPropertyDetails({ property: propertyItem }));
+      const propertyFor =
+        propertyItem?.property_for === "Rent" ? "rent" : "sale";
+      const propertyId = propertyItem?.unique_property_id || "N/A";
+      const bhkPart = propertyItem.bedrooms
+        ? `${propertyItem.bedrooms}-bhk-`
+        : "";
+      const subTypePart = propertyItem.sub_type
+        ? `${propertyItem.sub_type.toLowerCase().replace(/\s+/g, "-")}-`
+        : "";
+      const propertyNameSlug = propertyItem.property_name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      const builderNameSlug = propertyItem.builder_name
+        ? `-by-${propertyItem.builder_name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")}`
+        : "";
+      const locationSlug = propertyItem.location_id
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      const citySlug = (searchData?.city || "hyderabad")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      const forPart = `for-${propertyFor}-`;
+      const seoSlug = `${bhkPart}${subTypePart}${propertyNameSlug}${builderNameSlug}-${forPart}in-${locationSlug}-${citySlug}`;
+      const cleanSeoUrl = `/property/${seoSlug}/${propertyId}`;
+      router.push(cleanSeoUrl, { state: propertyItem });
+    },
+    [router, dispatch, searchData]
+  );
+  if (error || !property)
+    return <Empty message={error || "Property not found"} />;
+  const price =
+    property?.property_for === "Rent"
+      ? property?.monthly_rent
+      : property?.property_cost;
+  const getAreaLabelAndValue = (property) => {
+    if (property?.sub_type === "Plot") {
+      return {
+        label: "Plot",
+        value: `${formatValue(property?.plot_area)} ${property?.area_units}`,
+      };
+    } else if (property?.builtup_area) {
+      return {
+        label: "Built-up",
+        value: `${formatValue(property?.builtup_area)} ${property?.area_units}`,
+      };
+    }
+    return {
+      label: "Area",
+      value: "N/A",
+    };
+  };
+  const { label: areaLabel, value: areaValue } = getAreaLabelAndValue(property);
+  const statusText = (() => {
+    if (property?.property_for?.toLowerCase() === "rent") {
+      if (!property?.available_from) return "Available: N/A";
+      const date = new Date(property.available_from).toLocaleString("default", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      return `Available From ${date}`;
+    }
+    if (property?.sub_type === "Plot") {
+      const status = property?.possession_status?.toLowerCase();
+      return status === "immediate"
+        ? "Immediate Possession"
+        : "Future Possession";
+    }
+    if (property?.occupancy === "Ready to move") {
+      return "Ready to Move";
+    }
+    if (
+      property?.occupancy === "Under Construction" &&
+      property?.under_construction
+    ) {
+      const date = new Date(property.under_construction).toLocaleString(
+        "default",
+        { month: "short", year: "numeric" }
+      );
+      return `Possession ${date}`;
+    }
+    return "Status: N/A";
+  })();
+  return (
+    <>
+      <div
+        style={{ backgroundColor: PropertyAdsColors.secondary.background }}
+        className="bg-white/80 mt-3 sm:mt-7 backdrop-blur-lg border border-white/20 sm:rounded-2xl sm:shadow-xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02]"
+      >
+        <div className=" p-2 sm:p-5 ">
+          <div className="flex justify-left text-center">
+            <h1
+              style={{ color: PropertyAdsColors.primary.text }}
+              className="text-xl sm:text-2xl font-bold sm:leading-7 break-words"
+            >
+              {property.builder_name ? (
+                <span>{property.builder_name} </span>
+              ) : null}{" "}
+              {property?.property_name}
+            </h1>
+          </div>
+          <div className="mt-1 flex items-center gap-1 sm:whitespace-nowrap text-center text-xs text-gray-600">
+            <MapPin color="red" size={15} />
+            <span
+              style={{ color: PropertyAdsColors.secondary.text }}
+              className="truncate text-center"
+            >
+              {property?.city ? `${property.city}, ` : ""}
+              {property?.google_address || property?.location_id}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:gap-3 md:gap-4">
+            <Badge>{property?.sub_type || "Property"}</Badge>
+            <div
+              style={{ color: PropertyAdsColors.secondary.text }}
+              className="text-xs font-medium sm:text-sm"
+            >
+              All Inclusive Price
+            </div>
+            {property?.loan_facility === "Yes" && (
+              <div
+                style={{ color: PropertyAdsColors.primary.text }}
+                className="text-xs font-semibold sm:text-sm"
+              >
+                EMI Available
+              </div>
+            )}
+          </div>
+          <p
+            style={{ color: PropertyAdsColors.secondary.text }}
+            className="mt-3 text-sm flex flex-wrap gap-2 px-1"
+          >
+            {statusText}{" "}
+            {property?.facing ? ` • ${property.facing} Facing` : ""}{" "}
+            <span
+              style={{ color: PropertyAdsColors.accent.text }}
+              className="flex gap-1 items-center font-semibold"
+            >
+              <MdOutlineVerified color="green" size={18} /> RERA
+            </span>
+          </p>
+          <div className="mt-4 grid sm:grid-cols-2  cursor-pointer gap-3">
+            <Stat
+              label={
+                property?.property_for === "Rent" ? "Monthly Rent" : "Price"
+              }
+              value={
+                <>
+                  ₹{" "}
+                  {property.property_for === "Sell"
+                    ? formatToIndianCurrency(property?.property_cost)
+                    : formatToIndianCurrency(property?.monthly_rent)}
+                  {property?.property_cost_type && (
+                    <span
+                      style={{ color: PropertyAdsColors.primary.text }}
+                      className="ml-1 text-xs font-semibold px-1 rounded"
+                    >
+                      ({property.property_cost_type})
+                    </span>
+                  )}
+                </>
+              }
+            />
+            <Stat
+              label={
+                property?.sub_type === "Apartment" ? "Configuration" : "Type"
+              }
+              value={
+                property?.sub_type === "Apartment"
+                  ? `${property?.bedrooms} BHK`
+                  : property?.sub_type || "N/A"
+              }
+            />
+            <Stat label={areaLabel} value={areaValue} />
+            <Stat label="Facing" value={property?.facing || "N/A"} />
+          </div>
+          <div className="px-1 mt-3 ">
+            <div className="flex items-center justify-between text-xs font-bold mb-1">
+              {}
+              <span>
+                {property?.occupancy === "Under Construction" &&
+                  "Under Construction"}
+              </span>
+              <span>
+                {property?.occupancy === "Ready to move"
+                  ? "Ready to move"
+                  : `${
+                      property?.under_construction
+                        ? `Possession ${new Date(
+                            property.under_construction
+                          ).toLocaleString("default", {
+                            month: "short",
+                            year: "numeric",
+                          })}`
+                        : "In Progress"
+                    }`}
+              </span>
+            </div>
+            <div
+              style={{
+                backgroundColor:
+                  property?.occupancy?.trim().toLowerCase() === "ready to move"
+                    ? PropertyAdsColors.progress.fill
+                    : PropertyAdsColors.progress.background,
+              }}
+              className="h-2.5 w-full rounded-full overflow-hidden"
+            >
+              <div
+                className="h-full"
+                style={{
+                  width:
+                    property?.occupancy === "Ready To move" ? "100%" : "40%",
+                  backgroundColor:
+                    property?.occupancy?.trim().toLowerCase() ===
+                    "ready to move"
+                      ? PropertyAdsColors.progress.fill
+                      : PropertyAdsColors.progress.under_construction,
+                }}
+              />
+            </div>
+          </div>
+          <div className="py-5 px-1">
+            <div className="flex gap-3 text-center justify-center">
+              <button
+                onClick={handleContactSeller}
+                disabled={
+                  submittedStates[property?.unique_property_id]?.contact ||
+                  contacted?.includes(property.unique_property_id)
+                }
+                className={`w-full  h-11 rounded-lg text-sm font-semibold   ${
+                  submittedStates[property.unique_property_id]?.contact ||
+                  contacted?.includes(property.unique_property_id)
+                    ? "bg-gray-400 text-white border-1 border-cyan-700 cursor-not-allowed"
+                    : `${theme.button.secondary.bg} ${theme.button.secondary.text} cursor-pointer hover:opacity-90`
+                }
+  `}
+              >
+                {submittedStates[property?.unique_property_id]?.contact ||
+                contacted?.includes(property.unique_property_id)
+                  ? "Submitted"
+                  : "Contact Seller"}
+              </button>
+              <button
+                onClick={handleChatClick}
+                style={{
+                  backgroundColor: PropertyAdsColors.button.chat.background,
+                  color: PropertyAdsColors.button.chat.text,
+                }}
+                className={`w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg border border-[#25D366] text-[#25D366] text-sm font-semibold transition hover:bg-[${PropertyAdsColors.button.chat.hover}]`}
+              >
+                <Image
+                  width={100}
+                  height={100}
+                  src={whatsappIcon?.src}
+                  alt="WhatsApp"
+                  className="w-4 h-4"
+                  sizes="16px"
+                />
+                <span className="cursor-pointer text-[#25D366]">Chat</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-6">
+        <PropertyAds
+          handleRender={handleProperty}
+          propertyDataDetails={property}
+        />
+      </div>
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-30 backdrop-blur-xs">
+          <div ref={modalRef} className="relative w-[90%] max-w-sm">
+            <Login
+              setShowLoginModal={setShowLoginModal}
+              showLoginModal={showLoginModal}
+              onClose={handleClose}
+              modalRef={modalRef}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+export default PropertyDeatils;

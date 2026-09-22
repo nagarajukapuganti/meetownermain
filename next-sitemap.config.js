@@ -1,0 +1,98 @@
+module.exports = {
+  siteUrl: "https://meetowner.in",
+  generateRobotsTxt: true,
+  sitemapSize: 7000,
+  exclude: ["/api/*", "/lib/*", "/components/utils/useWhatsappHook.jsx"],
+  additionalSitemaps: ["https://meetowner.in/sitemap-images.xml"],
+  additionalPaths: async (config) => {
+    const staticRoutes = [
+      {
+        loc: `${config.siteUrl}/listings`,
+        lastmod: "2025-08-08",
+        changefreq: "daily",
+        priority: 0.9,
+      },
+      {
+        loc: `${config.siteUrl}/property`,
+        lastmod: "2025-08-08",
+        changefreq: "daily",
+        priority: 0.85,
+      },
+    ];
+    try {
+      const sitemapResponse = await fetch(
+        "https://api.meetowner.in/listings/v1/getSitemapData"
+      );
+      if (!sitemapResponse.ok) {
+        console.error("Failed to fetch sitemap data:", sitemapResponse.status);
+      }
+      const { sitemap } = await sitemapResponse.json();
+      const dynamicRoutes = [];
+      sitemap.forEach((cityData) => {
+        const citySlug = cityData.city;
+        ["Rent", "Sell"].forEach((purpose) => {
+          if (cityData[purpose].subTypes.length > 0) {
+            dynamicRoutes.push({
+              loc: `${config.siteUrl}/sitemap/${purpose}/${citySlug}`,
+              lastmod: new Date().toISOString(),
+              changefreq: "daily",
+              priority: 0.8,
+            });
+            cityData[purpose].subTypes.forEach((subType) => {
+              dynamicRoutes.push({
+                loc: `${config.siteUrl}/sitemap/${purpose}/${citySlug}/${subType}`,
+                lastmod: new Date().toISOString(),
+                changefreq: "weekly",
+                priority: 0.7,
+              });
+            });
+          }
+        });
+      });
+      const listingResponse = await fetch(
+        "https://api.meetowner.in/listings/v1/getSitemapListingLinks"
+      );
+      if (!listingResponse.ok) {
+        console.error("Failed to fetch listing links:", listingResponse.status);
+        return [...staticRoutes, ...dynamicRoutes];
+      }
+      const { links } = await listingResponse.json();
+      const listingRoutes = links.map((link) => ({
+        loc: link,
+        lastmod: new Date().toISOString(),
+        changefreq: "daily",
+        priority: 0.65,
+      }));
+      let propertyRoutes = [];
+      const propertyResponse = await fetch(
+        "https://api.meetowner.in/listings/v1/getAllPropertiesLinks"
+      );
+      if (!propertyResponse.ok) {
+        console.error(
+          "Failed to fetch property links:",
+          propertyResponse.status
+        );
+      } else {
+        const data = await propertyResponse.json();
+        propertyRoutes = data.map((item) => ({
+          loc: item.url,
+          lastmod: new Date().toISOString(),
+          changefreq: "daily",
+          priority: 0.7,
+        }));
+      }
+      return [
+        ...staticRoutes,
+        ...propertyRoutes,
+        ...listingRoutes,
+        ...dynamicRoutes,
+      ];
+    } catch (error) {
+      console.error("Error generating sitemap paths:", error);
+      return staticRoutes;
+    }
+  },
+  robotsTxtOptions: {
+    additionalSitemaps: ["https://meetowner.in/sitemap-images.xml"],
+  },
+};

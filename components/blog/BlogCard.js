@@ -1,0 +1,87 @@
+import { Card, CardContent, CardHeader } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Calendar } from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
+function slugify(str) {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/:/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+export default function BlogCard({ post }) {
+  const authorInitial =
+    post.author.name || "Unknown"
+      ? post.author.name.charAt(0).toUpperCase()
+      : "?";
+  const slug = slugify(post.title);
+  const authorName =
+    post?.author?.name &&
+    post.author.name !== "undefined" &&
+    post.author.name.trim() !== ""
+      ? post.author.name
+      : "Unknown";
+  return (
+    <Link href={`/blogs/${slug}/${post.id}`} className="block group ">
+      <Card className="h-full shadow-2xl hover:shadow-blog-card-hover border-2 border-gray-300 transition-all duration-300 group-hover:-translate-y-1 overflow-hidden">
+        <div className="aspect-video overflow-hidden">
+          <Image
+            priority
+            src={`https://api.meetowner.in/aws/v1/s3/blogs/${post?.image}`}
+            alt={`${post.title} - Meetowner Blog`}
+            width={800}
+            height={400}
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        </div>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs font-medium">
+              {post.category}
+            </Badge>
+            <div className="flex items-center text-xs text-muted-foreground gap-1">
+              <Calendar className="w-3 h-3" />
+              {new Date(post.publishedAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </div>
+          </div>
+          <h3 className="text-blog-lg font-bold leading-tight group-hover:text-primary transition-colors duration-200">
+            {post.title}
+          </h3>
+          <p className="text-muted-foreground text-sm leading-relaxed line-clamp-3">
+            {post.excerpt}
+          </p>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {post?.author?.avatar ? (
+                <Image
+                  src={post.author.avatar}
+                  alt={post.author.name || "Author"}
+                  width={24}
+                  height={24}
+                  className="w-6 h-6 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-gray-200 text-black flex items-center justify-center text-sm font-medium">
+                  {authorInitial}
+                </div>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {authorName}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}

@@ -1,25 +1,31 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const SITEMAP_API =
+  "https://api.meetowner.in/listings/v1/getSitemapData";
+
 export default async function CitySitemap({ params }) {
-  const { purpose, city } = params;
+  const { purpose, city } = await params;
 
-  const response = await fetch(
-    "https://api.meetowner.in/listings/v1/getSitemapData",
-    {
-      next: { revalidate: 86400 },
+  let sitemap = [];
+  try {
+    const response = await fetch(SITEMAP_API, { cache: "no-store" });
+    if (!response.ok) {
+      console.error("Failed to fetch sitemap data:", response.status);
+      return notFound();
     }
-  );
-  if (!response.ok) {
-    console.error("Failed to fetch sitemap data:", response.status);
+    const result = await response.json();
+    sitemap = Array.isArray(result?.sitemap) ? result.sitemap : [];
+  } catch (error) {
+    console.error("Sitemap API unavailable:", error);
     return notFound();
   }
-  const { sitemap } = await response.json();
-  const cityData = sitemap.find((c) => c.city === city);
 
-  if (!cityData) {
-    return notFound();
-  }
+  const cityData = sitemap.find((item) => item.city === city);
+  if (!cityData) return notFound();
 
   const subTypes = cityData[purpose]?.subTypes || [];
 
@@ -41,24 +47,3 @@ export default async function CitySitemap({ params }) {
     </div>
   );
 }
-
-export async function generateStaticParams() {
-  const response = await fetch(
-    "https://api.meetowner.in/listings/v1/getSitemapData"
-  );
-  if (!response.ok) {
-    console.error("Failed to fetch sitemap data:", response.status);
-    return [];
-  }
-  const { sitemap } = await response.json();
-
-  return sitemap.flatMap((cityData) => {
-    const citySlug = cityData.city.replace(/[^a-z0-9]+/g, "-");
-    return ["Rent", "Sell"].map((purpose) => ({
-      purpose,
-      city: citySlug,
-    }));
-  });
-}
-
-export const revalidate = 86400; // Revalidate every 24 hours
